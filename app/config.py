@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = ""
     CUSTOM_S3_ENDPOINT_URL: str = ""
 
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://task-react-frontend.vercel.app,https://task-react-frontend-hasnain-barytech-devs-projects.vercel.app,https://task-react-frontend-git-main-hasnain-barytech-devs-projects.vercel.app,https://task-py-backend.onrender.com"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://task-react-frontend.vercel.app,https://task-react-frontend-jbq1409ak-mohd-hasnains-projects.vercel.app,https://task-py-backend.onrender.com"
 
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
