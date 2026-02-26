@@ -66,12 +66,22 @@ async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db), curr
         task.tags = await get_or_create_tags(db, data.tags)
     db.add(task)
     await db.flush()
-    await db.refresh(task, ["creator", "assignee", "tags", "files", "comments"])
     await cache_delete_pattern("tasks:*")
     await cache_delete_pattern("analytics:*")
 
     await manager.broadcast({"type": "task_created", "data": {"task_id": str(task.id), "title": task.title}})
 
+    # Re-query with selectinload to eagerly load all relationships
+    refreshed = await db.execute(
+        select(Task).where(Task.id == task.id).options(
+            selectinload(Task.creator),
+            selectinload(Task.assignee),
+            selectinload(Task.tags),
+            selectinload(Task.files),
+            selectinload(Task.comments),
+        )
+    )
+    task = refreshed.unique().scalar_one()
     return TaskResponse.model_validate(task)
 
 
@@ -98,12 +108,23 @@ async def bulk_create_tasks(data: TaskBulkCreate, db: AsyncSession = Depends(get
             task.tags = await get_or_create_tags(db, t.tags)
         db.add(task)
         await db.flush()
-        await db.refresh(task, ["creator", "assignee", "tags", "files", "comments"])
-        created.append(task)
+        created.append(task.id)
 
     await cache_delete_pattern("tasks:*")
     await cache_delete_pattern("analytics:*")
-    return [TaskResponse.model_validate(t) for t in created]
+
+    # Re-query all created tasks with selectinload
+    refreshed = await db.execute(
+        select(Task).where(Task.id.in_(created)).options(
+            selectinload(Task.creator),
+            selectinload(Task.assignee),
+            selectinload(Task.tags),
+            selectinload(Task.files),
+            selectinload(Task.comments),
+        )
+    )
+    tasks = refreshed.unique().scalars().all()
+    return [TaskResponse.model_validate(t) for t in tasks]
 
 
 @router.get("", response_model=TaskListResponse)
@@ -218,12 +239,22 @@ async def update_task(task_id: uuid.UUID, data: TaskUpdate, db: AsyncSession = D
             task.status = _compute_status(task.start_date, task.due_date)
 
     await db.flush()
-    await db.refresh(task, ["creator", "assignee", "tags", "files", "comments"])
     await cache_delete_pattern("tasks:*")
     await cache_delete_pattern("analytics:*")
 
     await manager.broadcast({"type": "task_updated", "data": {"task_id": str(task.id), "title": task.title}})
 
+    # Re-query with selectinload to eagerly load all relationships
+    refreshed = await db.execute(
+        select(Task).where(Task.id == task_id).options(
+            selectinload(Task.creator),
+            selectinload(Task.assignee),
+            selectinload(Task.tags),
+            selectinload(Task.files),
+            selectinload(Task.comments),
+        )
+    )
+    task = refreshed.unique().scalar_one()
     return TaskResponse.model_validate(task)
 
 
