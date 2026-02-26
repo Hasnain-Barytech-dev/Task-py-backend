@@ -58,6 +58,7 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = "todo"
     priority: Optional[str] = "medium"
+    start_date: Optional[datetime.datetime] = None
     due_date: Optional[datetime.datetime] = None
     assigned_to: Optional[uuid.UUID] = None
     tags: Optional[List[str]] = []
@@ -69,6 +70,7 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
+    start_date: Optional[datetime.datetime] = None
     due_date: Optional[datetime.datetime] = None
     assigned_to: Optional[uuid.UUID] = None
     tags: Optional[List[str]] = None
@@ -122,6 +124,7 @@ class TaskResponse(BaseModel):
     description: Optional[str] = None
     status: str
     priority: str
+    start_date: Optional[datetime.datetime] = None
     due_date: Optional[datetime.datetime] = None
     notify_overdue: bool = False
     is_deleted: bool

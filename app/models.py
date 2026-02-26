@@ -68,6 +68,7 @@ class Task(Base):
     description = Column(Text, nullable=True)
     status = Column(SAEnum(TaskStatus), default=TaskStatus.TODO, nullable=False, index=True)
     priority = Column(SAEnum(TaskPriority), default=TaskPriority.MEDIUM, nullable=False, index=True)
+    start_date = Column(DateTime(timezone=True), nullable=True)
     due_date = Column(DateTime(timezone=True), nullable=True)
     notify_overdue = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False, index=True)

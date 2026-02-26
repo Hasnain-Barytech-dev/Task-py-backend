@@ -32,7 +32,7 @@ async def get_overview(db: AsyncSession = Depends(get_db), current_user: User = 
     )
     await db.execute(
         sql_update(Task)
-        .where(Task.due_date >= now, Task.status == TaskStatus.TODO, Task.is_deleted == False)
+        .where(Task.start_date <= now, Task.status == TaskStatus.TODO, Task.is_deleted == False)
         .values(status=TaskStatus.IN_PROGRESS)
     )
     await db.flush()

@@ -33,22 +33,30 @@ async def get_or_create_tags(db: AsyncSession, tag_names: List[str]) -> List[Tag
     return tags
 
 
+def _compute_status(start_date, due_date):
+    """Determine task status from dates. Returns None if no dates are set."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    if due_date and due_date < now:
+        return TaskStatus.OVERDUE
+    if start_date and start_date <= now:
+        return TaskStatus.IN_PROGRESS
+    return TaskStatus.TODO
+
+
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from datetime import datetime, timezone
-    initial_status = TaskStatus(data.status) if data.status else TaskStatus.TODO
-    # Auto-transition based on due_date
-    if data.due_date:
-        now = datetime.now(timezone.utc)
-        if data.due_date < now and initial_status not in (TaskStatus.COMPLETED, TaskStatus.OVERDUE):
-            initial_status = TaskStatus.OVERDUE
-        elif data.due_date >= now and initial_status == TaskStatus.TODO:
-            initial_status = TaskStatus.IN_PROGRESS
+    # If user explicitly sets completed, honour it; otherwise compute from dates
+    if data.status and data.status == 'completed':
+        initial_status = TaskStatus.COMPLETED
+    else:
+        initial_status = _compute_status(data.start_date, data.due_date)
     task = Task(
         title=data.title,
         description=data.description,
         status=initial_status,
         priority=TaskPriority(data.priority) if data.priority else TaskPriority.MEDIUM,
+        start_date=data.start_date,
         due_date=data.due_date,
         notify_overdue=data.notify_overdue or False,
         created_by=current_user.id,
@@ -69,22 +77,18 @@ async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db), curr
 
 @router.post("/bulk", response_model=list[TaskResponse], status_code=status.HTTP_201_CREATED)
 async def bulk_create_tasks(data: TaskBulkCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from datetime import datetime, timezone
     created = []
-    now = datetime.now(timezone.utc)
     for t in data.tasks:
-        initial_status = TaskStatus(t.status) if t.status else TaskStatus.TODO
-        # Auto-transition based on due_date
-        if t.due_date:
-            if t.due_date < now and initial_status not in (TaskStatus.COMPLETED, TaskStatus.OVERDUE):
-                initial_status = TaskStatus.OVERDUE
-            elif t.due_date >= now and initial_status == TaskStatus.TODO:
-                initial_status = TaskStatus.IN_PROGRESS
+        if t.status and t.status == 'completed':
+            initial_status = TaskStatus.COMPLETED
+        else:
+            initial_status = _compute_status(t.start_date, t.due_date)
         task = Task(
             title=t.title,
             description=t.description,
             status=initial_status,
             priority=TaskPriority(t.priority) if t.priority else TaskPriority.MEDIUM,
+            start_date=t.start_date,
             due_date=t.due_date,
             notify_overdue=t.notify_overdue or False,
             created_by=current_user.id,
@@ -192,10 +196,10 @@ async def update_task(task_id: uuid.UUID, data: TaskUpdate, db: AsyncSession = D
         task.title = data.title
     if data.description is not None:
         task.description = data.description
-    if data.status is not None:
-        task.status = TaskStatus(data.status)
     if data.priority is not None:
         task.priority = TaskPriority(data.priority)
+    if data.start_date is not None:
+        task.start_date = data.start_date
     if data.due_date is not None:
         task.due_date = data.due_date
     if data.assigned_to is not None:
@@ -204,6 +208,14 @@ async def update_task(task_id: uuid.UUID, data: TaskUpdate, db: AsyncSession = D
         task.tags = await get_or_create_tags(db, data.tags)
     if data.notify_overdue is not None:
         task.notify_overdue = data.notify_overdue
+
+    # Status: if user explicitly sets completed, honour it; otherwise recompute from dates
+    if data.status is not None:
+        task.status = TaskStatus(data.status)
+    elif data.start_date is not None or data.due_date is not None:
+        # Dates changed — recompute status (unless already completed)
+        if task.status != TaskStatus.COMPLETED:
+            task.status = _compute_status(task.start_date, task.due_date)
 
     await db.flush()
     await db.refresh(task, ["creator", "assignee", "tags", "files", "comments"])

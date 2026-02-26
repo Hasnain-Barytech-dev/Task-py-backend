@@ -25,11 +25,12 @@ async def lifespan(app: FastAPI):
         from app.models import Task, TaskStatus, Notification, NotificationType, User
         from sqlalchemy import update, select
         from datetime import datetime, timezone
+        from app.celery_worker import send_email_notification
 
         async with async_session() as session:
             now = datetime.now(timezone.utc)
 
-            # 1) Mark past-due tasks as OVERDUE
+            # 1) Mark past-due tasks as OVERDUE + create notifications
             overdue_result = await session.execute(
                 select(Task)
                 .where(Task.due_date < now, Task.status.notin_([TaskStatus.COMPLETED, TaskStatus.OVERDUE]), Task.is_deleted == False)
@@ -37,7 +38,6 @@ async def lifespan(app: FastAPI):
             overdue_tasks = overdue_result.scalars().all()
             for task in overdue_tasks:
                 task.status = TaskStatus.OVERDUE
-                # Create notification + email if notify_overdue is enabled
                 if task.notify_overdue:
                     notify_user_id = task.assigned_to or task.created_by
                     notif = Notification(
@@ -48,11 +48,23 @@ async def lifespan(app: FastAPI):
                         message=f"Task '{task.title}' is past its due date. Please take action.",
                     )
                     session.add(notif)
+                    # Send email
+                    try:
+                        user_result = await session.execute(select(User).where(User.id == notify_user_id))
+                        u = user_result.scalar_one_or_none()
+                        if u and u.email:
+                            send_email_notification(
+                                u.email,
+                                f"Overdue: {task.title}",
+                                f"<p>Task <strong>{task.title}</strong> is overdue. Please update its status.</p>",
+                            )
+                    except Exception:
+                        pass
 
-            # 2) Mark TODO tasks with future due_date as IN_PROGRESS
+            # 2) Mark TODO tasks where start_date has passed as IN_PROGRESS
             await session.execute(
                 update(Task)
-                .where(Task.due_date >= now, Task.status == TaskStatus.TODO, Task.is_deleted == False)
+                .where(Task.start_date <= now, Task.status == TaskStatus.TODO, Task.is_deleted == False)
                 .values(status=TaskStatus.IN_PROGRESS)
             )
 
